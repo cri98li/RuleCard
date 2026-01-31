@@ -1,12 +1,14 @@
 import time
 
+import matplotlib.pyplot as plt
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, roc_curve, auc, RocCurveDisplay
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+from sklearn.ensemble import RandomForestClassifier
 
 from RuleCard.RuleCardGAM import RuleCardGAM
+
 
 def _fit_pred_times(model, X_train, y_train, X_test):
     start_train = time.time()
@@ -17,6 +19,7 @@ def _fit_pred_times(model, X_train, y_train, X_test):
     end_test = time.time()
 
     return round(end_train - start_train, 4), round(end_test - start_test, 4), y_pred
+
 
 if __name__ == "__main__":
     df = pd.read_csv('datasets/CLF/diabetes.csv')
@@ -33,3 +36,7 @@ if __name__ == "__main__":
     train_time, pred_time, y_pred = _fit_pred_times(rcgam, X_train, y_train, X_test)
     print('RuleCardGAM:', classification_report(y_test, y_pred), end='\t')
     print(f'Training time: {train_time}s\tPrediction time: {pred_time}s\n\n')
+
+    RocCurveDisplay.from_predictions(y_train, rcgam.predict_proba(X_train), name='train')
+    RocCurveDisplay.from_predictions(y_test, rcgam.predict_proba(X_test), name='test').plot()
+    plt.show()

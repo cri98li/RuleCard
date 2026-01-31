@@ -1,1 +1,7 @@
 RuleTree
+interpret
+numpy==2.3.5
+catboost
+xgboost
+lightgbm
+line_profiler_pycharm

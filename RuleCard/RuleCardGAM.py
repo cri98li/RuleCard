@@ -3,33 +3,89 @@ from itertools import combinations
 
 import numpy as np
 from RuleTree import RuleTreeRegressor
+from interpret.utils import measure_interactions
+from ordered_set import OrderedSet
 from scipy.special import expit
 from scipy.special.cython_special import logit
-from sklearn.base import ClassifierMixin
+from sklearn.base import ClassifierMixin, BaseEstimator
 from tqdm.auto import tqdm
 
+from RuleCard.feat_importance_wrapper import *
 
-class RuleCardGAM(ClassifierMixin):
+
+class RuleCardGAM(ClassifierMixin, BaseEstimator):
     def __init__(self, learning_rate=.1, patience=5, val_size=.15, base_estimator=RuleTreeRegressor(max_depth=3),
                  max_n_iter=100,
+                 feature_order='feature_importance',  # feature_importance, random
+                 feature_importance_estimator=RuleCard_RandomForestRegressor(max_depth=3),
+                 recompute_feature_order=False,
+                 reuse_features=True,  # True, False
+                 top_k_features=np.inf,
+                 use_fast=True,
                  random_state=42, verbose=False):
+        assert issubclass(feature_importance_estimator.__class__, RuleCard_FeatureImportanceEstimator)
+
         self.learning_rate = learning_rate
         self.patience = patience
         self.val_size = val_size
         self.base_estimator = base_estimator
         self.max_n_iter = max_n_iter
+        self.feature_order = feature_order
+        self.feature_importance_estimator = feature_importance_estimator
+        self.reuse_features = reuse_features
+        self.recompute_feature_order = recompute_feature_order
+        self.top_k_features = top_k_features
+        self.use_fast = use_fast
         self.random_state = random_state
         self.verbose = verbose
         self.base_estimator.random_state = self.random_state
+
+        self.feature_combinations_ = OrderedSet()
+        self.feature_importance_ = None
+        self.used_features_ = OrderedSet()
+
+    def _orderby_feature_importance(self, X, y):
+        X0 = X
+        for cols in self.used_features_:
+            X0[:, cols] = .0
+
+        topk = min(X.shape[1], self.top_k_features)
+        feat_importance = self.feature_importance_estimator.fit(X0, y).get_feature_importance()
+        feat_importance_idx = np.argsort(feat_importance)[:topk]
+        feat_importance = feat_importance[feat_importance_idx]
+
+        return feat_importance, OrderedSet([(x, ) for x in feat_importance_idx]) | self.feature_combinations_
+
+    def _orderby_random(self, X, y):
+        topk = min(X.shape[1], self.top_k_features)
+        return OrderedSet([(x, ) for x in range(X.shape[1])][:topk]) - self.used_features_
+
+    def _fast(self, X, y):
+        admissible_features = self._orderby_random(X, y)
+        if len(admissible_features) < 2:
+            return OrderedSet()
+        interactions = measure_interactions(X, y, interactions=combinations([x[0] for x in admissible_features], 2))
+
+        return OrderedSet([c for c, scores in interactions])
+
+    def _get_combinations(self, X, y):
+        if not self.recompute_feature_order and self.feature_importance_ is not None:
+            return self.feature_combinations_ - self.used_features_
+
+        self.feature_importance_, self.feature_combinations_ = self._orderby_feature_importance(X, y)
+        self.feature_combinations_ |= self._fast(X, y)
+
+        return self.feature_combinations_ - self.used_features_
 
     def fit(self, X, y):
         self.classes_ = np.unique(y).tolist()
         n_classes = len(self.classes_)
         if n_classes != 2:
             raise ValueError("RuleCardGAM only support binary classification tasks")
-        y = y == self.classes_[1]
+        y = (y == self.classes_[1]).astype(float)
 
         n_val = int(self.val_size * X.shape[0])
+        np.random.seed(self.random_state)
         idx = np.random.permutation(X.shape[0])
         val_idx = idx[:n_val]
         train_idx = idx[n_val:]
@@ -46,13 +102,17 @@ class RuleCardGAM(ClassifierMixin):
         log_odds_prediction = np.ones((X_train.shape[0],)) * self.base_log_odds
         log_odds_prediction_val = np.ones((X_val.shape[0],)) * self.base_log_odds
 
-        pairs = list(combinations(range(X.shape[1]), 2))
-        feature_idxs = [idx for idx in list(range(X.shape[1]))] + pairs
         self.estimators_ = []
-
         wait = 0
         for it_idx in tqdm(range(self.max_n_iter), position=0, leave=False, disable=not self.verbose):
-            for feat_idx in tqdm(feature_idxs, position=1, leave=False, disable=not self.verbose):
+            best_feat_idx = (-1, )
+            best_est = None
+            best_gamma_map = {}
+            best_res_delta, best_res_delta_val = None, None
+            best_score, best_score_val = np.inf, np.inf
+
+            for feat_idx in tqdm(self._get_combinations(X_train, residuals), position=1, leave=False, disable=not self.verbose):
+                #print('\t', feat_idx)
                 est = copy.deepcopy(self.base_estimator)
                 est.fit(X_train[:, feat_idx].reshape(X_train.shape[0], -1), residuals)
 
@@ -68,38 +128,52 @@ class RuleCardGAM(ClassifierMixin):
                 res_delta = self.learning_rate * gamma
                 res_delta_val = self.learning_rate * gamma_val
 
-                log_odds_prediction += res_delta
-                log_odds_prediction_val += res_delta_val
-                new_prediction = expit(log_odds_prediction)
-                new_prediction_val = expit(log_odds_prediction_val)
-                if self.verbose:
-                    tqdm.write(f"""\
-                    {np.mean(np.abs(y_val - new_prediction_val)), np.mean(np.abs(y_val - prediction_val))}\t
-                    {np.mean(np.abs(y_val - new_prediction_val)) < np.mean(np.abs(y_val - prediction_val)),}\
-                    """)
+                new_prediction = expit(log_odds_prediction + res_delta)
+                new_prediction_val = expit(log_odds_prediction_val + res_delta_val)
 
-                if np.mean(np.abs(y_val - new_prediction_val)) < np.mean(np.abs(y_val - prediction_val)):
-                    wait = 0
-                    prediction_val = new_prediction_val
-                else:
-                    wait += 1
-                    if wait >= self.patience*len(feature_idxs):
-                        self.estimators_ = self.estimators_[:-self.patience*len(feature_idxs) + 1]
-                        return self
-                prediction = new_prediction
-                residuals = y_train - prediction
+                score = np.mean(np.abs(y_train - new_prediction))
+                score_val = np.mean(np.abs(y_val - new_prediction_val))
 
-                self.estimators_.append((feat_idx, est, gamma_map))
+                if best_score > score:
+                    best_score, best_score_val = score, score_val
+                    best_est = est
+                    best_feat_idx = feat_idx
+                    best_gamma_map = gamma_map
+                    best_res_delta = res_delta
+                    best_res_delta_val = res_delta_val
+
+            log_odds_prediction += best_res_delta
+            log_odds_prediction_val += best_res_delta_val
+            best_prediction = expit(log_odds_prediction)
+            best_prediction_val = expit(log_odds_prediction_val)
+
+            if best_score_val < np.mean(np.abs(y_val - prediction_val)):
+                wait = 0
+                prediction_val = best_prediction_val
+            else:
+                wait += 1
+                if wait >= self.patience:
+                    self.estimators_ = self.estimators_[:-self.patience ]
+                    return self
+            prediction = best_prediction
+            residuals = y_train - prediction
+
+            if not self.reuse_features:
+                self.used_features_.append(best_feat_idx)
+            self.estimators_.append((best_feat_idx, best_est, best_gamma_map))
 
         return self
 
     def predict(self, X):
-        return np.vectorize(lambda x: self.classes_[x])(self.predict_proba(X) > .5)
+        return np.vectorize(lambda x: self.classes_[x])((self.predict_proba(X) > .5).astype(int))
 
     def predict_proba(self, X):
-        prediction = np.ones((X.shape[0],)) * self.base_prediction_
+        log_odds = np.ones((X.shape[0],)) * self.base_log_odds
         for feat_idx, est, gamma_map in self.estimators_:
             leafs = est.apply(X[:, feat_idx].reshape(X.shape[0], -1))
             leafs = np.vectorize(gamma_map.get)(leafs)
-            prediction += self.learning_rate * leafs
+            log_odds += self.learning_rate * leafs
+        prediction = expit(log_odds)
         return prediction
+
+
