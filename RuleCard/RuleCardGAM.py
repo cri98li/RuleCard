@@ -1,9 +1,11 @@
 import copy
+from concurrent.futures.process import ProcessPoolExecutor
 from itertools import combinations
 
 import numpy as np
 from RuleTree import RuleTreeRegressor
 from interpret.utils import measure_interactions
+from joblib import Parallel, delayed
 from ordered_set import OrderedSet
 from scipy.special import expit
 from scipy.special.cython_special import logit
@@ -22,6 +24,7 @@ class RuleCardGAM(ClassifierMixin, BaseEstimator):
                  reuse_features=True,  # True, False
                  top_k_features=np.inf,
                  use_fast=True,
+                 n_jobs=1,
                  random_state=42, verbose=False):
         assert issubclass(feature_importance_estimator.__class__, RuleCard_FeatureImportanceEstimator)
 
@@ -36,6 +39,7 @@ class RuleCardGAM(ClassifierMixin, BaseEstimator):
         self.recompute_feature_order = recompute_feature_order
         self.top_k_features = top_k_features
         self.use_fast = use_fast
+        self.n_jobs = n_jobs
         self.random_state = random_state
         self.verbose = verbose
         self.base_estimator.random_state = self.random_state
@@ -84,6 +88,9 @@ class RuleCardGAM(ClassifierMixin, BaseEstimator):
             raise ValueError("RuleCardGAM only support binary classification tasks")
         y = (y == self.classes_[1]).astype(float)
 
+        if self.top_k_features == 'sqrt':
+            self.top_k_features = max(1, int(X.shape[1]**.5))
+
         n_val = int(self.val_size * X.shape[0])
         np.random.seed(self.random_state)
         idx = np.random.permutation(X.shape[0])
@@ -111,36 +118,37 @@ class RuleCardGAM(ClassifierMixin, BaseEstimator):
             best_res_delta, best_res_delta_val = None, None
             best_score, best_score_val = np.inf, np.inf
 
-            for feat_idx in tqdm(self._get_combinations(X_train, residuals), position=1, leave=False, disable=not self.verbose):
-                #print('\t', feat_idx)
-                est = copy.deepcopy(self.base_estimator)
-                est.fit(X_train[:, feat_idx].reshape(X_train.shape[0], -1), residuals)
+            if self.n_jobs == 1:
+                for feat_idx in tqdm(self._get_combinations(X_train, residuals), position=1, leave=False,
+                                     disable=not self.verbose):
+                    score, score_val, est, feat_idx, gamma_map, res_delta, res_delta_val = _rulecardGAM_innerloop(
+                        self.base_estimator, feat_idx, self.learning_rate, X_train[:, feat_idx], X_val[:, feat_idx],
+                        y_train, y_val, residuals, prediction, log_odds_prediction, log_odds_prediction_val)
 
-                leafs = est.apply(X_train[:, feat_idx].reshape(X_train.shape[0], -1))
-                leafs_val = est.apply(X_val[:, feat_idx].reshape(X_val.shape[0], -1))
-                gamma_map = {}
-                denom = np.sum(prediction * (1 - prediction))
-                for leaf_id in np.unique(leafs):
-                    gamma_map[leaf_id] = residuals[leafs == leaf_id].sum() / denom
+                    if best_score > score:
+                        best_score, best_score_val = score, score_val
+                        best_est = est
+                        best_feat_idx = feat_idx
+                        best_gamma_map = gamma_map
+                        best_res_delta = res_delta
+                        best_res_delta_val = res_delta_val
 
-                gamma = np.vectorize(gamma_map.get)(leafs)
-                gamma_val = np.vectorize(gamma_map.get)(leafs_val)
-                res_delta = self.learning_rate * gamma
-                res_delta_val = self.learning_rate * gamma_val
+            else:
+                results = Parallel(n_jobs=self.n_jobs, prefer="processes", verbose=0 if not self.verbose else 5)(
+                    delayed(_rulecardGAM_innerloop)(self.base_estimator, feat_idx, self.learning_rate,
+                                                    X_train[:, feat_idx], X_val[:, feat_idx], y_train, y_val, residuals,
+                                                    prediction, log_odds_prediction, log_odds_prediction_val)
+                    for feat_idx in self._get_combinations(X_train, residuals)
+                )
 
-                new_prediction = expit(log_odds_prediction + res_delta)
-                new_prediction_val = expit(log_odds_prediction_val + res_delta_val)
-
-                score = np.mean(np.abs(y_train - new_prediction))
-                score_val = np.mean(np.abs(y_val - new_prediction_val))
-
-                if best_score > score:
-                    best_score, best_score_val = score, score_val
-                    best_est = est
-                    best_feat_idx = feat_idx
-                    best_gamma_map = gamma_map
-                    best_res_delta = res_delta
-                    best_res_delta_val = res_delta_val
+                for score, score_val, est, feat_idx, gamma_map, res_delta, res_delta_val in results:
+                    if best_score > score:
+                        best_score, best_score_val = score, score_val
+                        best_est = est
+                        best_feat_idx = feat_idx
+                        best_gamma_map = gamma_map
+                        best_res_delta = res_delta
+                        best_res_delta_val = res_delta_val
 
             log_odds_prediction += best_res_delta
             log_odds_prediction_val += best_res_delta_val
@@ -177,3 +185,27 @@ class RuleCardGAM(ClassifierMixin, BaseEstimator):
         return prediction
 
 
+def _rulecardGAM_innerloop(base_estimator, feat_idx, learning_rate, X_train, X_val, y_train, y_val, residuals,
+                           prediction, log_odds_prediction, log_odds_prediction_val):
+    est = copy.deepcopy(base_estimator)
+    est.fit(X_train.reshape(X_train.shape[0], -1), residuals)
+
+    leafs = est.apply(X_train.reshape(X_train.shape[0], -1))
+    leafs_val = est.apply(X_val.reshape(X_val.shape[0], -1))
+    gamma_map = {}
+    denom = np.sum(prediction * (1 - prediction))
+    for leaf_id in np.unique(leafs):
+        gamma_map[leaf_id] = residuals[leafs == leaf_id].sum() / denom
+
+    gamma = np.vectorize(gamma_map.get)(leafs)
+    gamma_val = np.vectorize(gamma_map.get)(leafs_val)
+    res_delta = learning_rate * gamma
+    res_delta_val = learning_rate * gamma_val
+
+    new_prediction = expit(log_odds_prediction + res_delta)
+    new_prediction_val = expit(log_odds_prediction_val + res_delta_val)
+
+    score = np.mean(np.abs(y_train - new_prediction))
+    score_val = np.mean(np.abs(y_val - new_prediction_val))
+
+    return score, score_val, est, feat_idx, gamma_map, res_delta, res_delta_val
