@@ -1,9 +1,13 @@
 import numpy as np
 import pandas as pd
 from pandas.core.dtypes.common import is_object_dtype
+from pandas.errors import PerformanceWarning
 from sklearn.compose import ColumnTransformer, make_column_selector
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from ucimlrepo import fetch_ucirepo
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=PerformanceWarning)
 
 
 def read_titanic(encode=True):
@@ -330,6 +334,7 @@ def read_heart(encode=True):
     y = heart_disease.data.targets
 
     X['y'] = y
+    X.dropna(inplace=True)
     return 'heart', X.astype("float")
 
 
@@ -363,6 +368,7 @@ if __name__ == "__main__":
     for dataset_reader in all_datasets:
         dataset_name, df = dataset_reader()
         dataset_shapes.append((dataset_name, df.shape[1], df.shape[0]))
+        print(dataset_name, np.sum(df.isna().sum()))
 
     dataset_shapes.sort(key=lambda x: x[1])
 
