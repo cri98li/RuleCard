@@ -154,7 +154,7 @@ def run(X, y, dataset_name, model_name, hypers):
             if 'l2' in str(e):
                 return 'skip'
             else:
-                raise e
+                return f'error: {e}'  # raise e
         if 'cv_fit_time' not in res:
             res['cv_fit_time'] = .0
             res['cv_predict_time'] = .0
@@ -217,6 +217,8 @@ if __name__ == "__main__":
                         diz = dict(zip(dict_hyper[model_name].keys(), val_comb))
                         processes.append(executor.submit(run, X, y, dataset_name, model_name, diz))
 
-                for p in tqdm(processes, position=2, leave=False, desc=f'Getting results for {dataset_name}'):
-                    p.result()
+                for p in tqdm(processes, position=1, leave=False, desc=f'Getting results for {dataset_name}'):
+                    str = p.result()
+                    if 'error' in str:
+                        tqdm.write(str)
 
