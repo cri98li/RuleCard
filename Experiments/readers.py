@@ -348,9 +348,8 @@ def read_magic(encode=True):
 
 
 all_datasets = [
-    read_mushroom,
     read_telco,
-    read_heart,
+    #read_heart,
     read_magic,
     read_bankMarketing,
     read_diabetes,
@@ -361,6 +360,7 @@ all_datasets = [
     read_taiwan_credit,
     read_adult,
     read_bank,
+    read_mushroom
 ]
 
 if __name__ == "__main__":
@@ -368,7 +368,7 @@ if __name__ == "__main__":
     for dataset_reader in all_datasets:
         dataset_name, df = dataset_reader()
         dataset_shapes.append((dataset_name, df.shape[1], df.shape[0]))
-        print(dataset_name, np.sum(df.isna().sum()))
+        print(dataset_name, np.sum(df.isna().sum()), df.iloc[:, -1].unique())
 
     dataset_shapes.sort(key=lambda x: x[1])
 

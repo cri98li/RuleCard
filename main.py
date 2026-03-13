@@ -7,6 +7,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestClassifier
 
+from Experiments.readers import read_telco
 from RuleCard.RuleCardGAM import RuleCardGAM
 
 
@@ -22,7 +23,7 @@ def _fit_pred_times(model, X_train, y_train, X_test):
 
 
 if __name__ == "__main__":
-    df = pd.read_csv('datasets/CLF/diabetes.csv')
+    df = read_telco()
     X = df.iloc[:, :-1].values
     y = LabelEncoder().fit_transform(df.iloc[:, -1].values)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
@@ -32,7 +33,8 @@ if __name__ == "__main__":
     print('Random Forest:', classification_report(y_test, y_pred), end='\t')
     print(f'Training time: {train_time}s\tPrediction time: {pred_time}s\n\n')
 
-    rcgam = RuleCardGAM()
+    rcgam = RuleCardGAM(n_jobs=16, use_fast=True, reuse_features=False, recompute_feature_order=True,
+                        feature_order='random', max_n_iter=500, patience=15, learning_rate=0.5)
     train_time, pred_time, y_pred = _fit_pred_times(rcgam, X_train, y_train, X_test)
     print('RuleCardGAM:', classification_report(y_test, y_pred), end='\t')
     print(f'Training time: {train_time}s\tPrediction time: {pred_time}s\n\n')

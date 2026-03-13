@@ -1,0 +1,16 @@
+[project]
+name = "rulecard"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.10"
+dependencies = [
+    "catboost>=1.2.8",
+    "interpret>=0.7.5",
+    "lightgbm>=4.6.0",
+    "line-profiler-pycharm>=1.2.0",
+    "pip-system-certs>=5.3",
+    "ruletree>=2026.1.22.160621",
+    "scikit-learn>=1.7.2",
+    "ucimlrepo>=0.0.7",
+    "xgboost>=3.1.3",
+]

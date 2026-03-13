@@ -6,6 +6,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from itertools import product
 
+import h5py
 import numpy as np
 import pandas as pd
 from RuleTree import RuleTreeRegressor
@@ -17,6 +18,10 @@ from sklearn.linear_model import RidgeClassifier
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from tqdm.auto import tqdm
 
+try:
+    from Experiments.My_FasterRisk import MyFasterRisk
+except:
+    pass
 from RuleCard.RuleCardGAM import RuleCardGAM
 from Experiments.readers import read_bank, all_datasets
 from RuleCard.feat_importance_wrapper import *
@@ -79,29 +84,32 @@ dict_hyper = {
         "random_state": [random_state]
     },
     "RuleCard": {
-        "learning_rate": [0.1, 0.01, 0.3, 0.5, 0.8, 1.],
-        "patience": [5, 15],
+        "learning_rate": [0.3, 0.5, 1.],
+        "patience": [15],
         "max_depth": [1, 2, 3],
         "max_n_iter": [100, 500],
-        "feature_order": ['feature_importance', 'random'],
-        "recompute_feature_order": [True, False],
+        "feature_order": ['feature_importance', 'random'], #
+        "recompute_feature_order": [True, False], #
         "reuse_features": [True, False],
         "use_fast": [True, False],
-        "top_k_features": [np.inf, 5, 3, 'sqrt'],
+        "top_k_features": [3, 5, 'sqrt', np.inf],
         "n_jobs": [n_jobs],
 
         "feature_importance_estimator": [
-            RuleCard_DecisionTreeRegressor(random_state=random_state),
-            RuleCard_RandomForestRegressor(random_state=random_state),
-            RuleCard_LGBMRegressor(random_state=random_state),
-            RuleCard_XGBoost(random_state=random_state),
-            RuleCard_CatBoostRegressor(random_state=random_state),
-            RuleCard_Variance(),
-            RuleCard_InfoGainStump(),
-            RuleCard_Chi2(),
-            RuleCard_ANOVA_regression(),
-            RuleCard_mi_regression(random_state=random_state),
+            #RuleCard_DecisionTreeRegressor(random_state=random_state),
+            RuleCard_RandomForestRegressor(random_state=random_state, n_jobs=n_jobs),
+            #RuleCard_LGBMRegressor(random_state=random_state, n_jobs=n_jobs),
+            #RuleCard_XGBoost(random_state=random_state, n_jobs=n_jobs),
+            #RuleCard_CatBoostRegressor(random_state=random_state),
+            #RuleCard_Variance(),
+            #RuleCard_InfoGainStump(),
+            #RuleCard_Chi2(),
+            #RuleCard_ANOVA_regression(),
+            #RuleCard_mi_regression(random_state=random_state, n_jobs=n_jobs),
         ]
+    },
+    'fasterrisk': {
+        'sparsity': [1, 3, 5, 10, 15, 50]
     }
 }
 
@@ -120,6 +128,8 @@ def get_model(model_name):
         return TreeGAMClassifier
     elif model_name == "RuleCard":
         return lambda max_depth, **kwargs: RuleCardGAM(**kwargs, base_estimator=RuleTreeRegressor(max_depth=max_depth))
+    elif model_name == 'fasterrisk':
+        return MyFasterRisk
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
@@ -127,7 +137,48 @@ def gen_path(dataset_name, model_name, hypers):
     hyper_hash = hashlib.md5(str(hypers).encode()).hexdigest()
     return f'res/{dataset_name}/{model_name}/{hyper_hash}'
 
+def get_rules(node, real_idx, X):
+    if node.is_leaf():
+        return [([], node.prediction, len(X))]
+
+    rules = []
+
+    feature = real_idx[node.stump.feature_original[0]]
+    threshold = node.stump.threshold_original[0]
+    cat = node.stump.is_categorical
+
+    if cat:
+        X_l = X[X[:, feature] == threshold]
+        X_r = X[X[:, feature] != threshold]
+        op_l, op_r = "==", "!="
+    else:
+        X_l = X[X[:, feature] <= threshold]
+        X_r = X[X[:, feature] > threshold]
+        op_l, op_r = "<=", ">"
+
+    if node.node_l is not None:
+        for r, pred, support in get_rules(node.node_l, real_idx, X_l):
+            rules.append(([(feature, threshold, op_l)] + r, pred, support))
+
+    if node.node_r is not None:
+        for r, pred, support in get_rules(node.node_r, real_idx, X_r):
+            rules.append(([(feature, threshold, op_r)] + r, pred, support))
+
+    return rules
+
+def get_all_rules(clf: RuleCardGAM, X):
+    rules = []
+    for est in clf.estimators_:
+        if est[1].root.is_leaf():
+            continue
+        rules += get_rules(est[1].root, est[0], X)
+
+    return rules
+
 def run(X, y, dataset_name, model_name, hypers):
+    if model_name == 'RuleCard' and hypers['use_fast'] and hypers['max_depth'] == 1:
+        return 'skip'
+
     cv_folds = 5
     res = copy.copy(hypers) | {'dataset_name': dataset_name, 'model_name': model_name}
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=random_state,
@@ -150,11 +201,13 @@ def run(X, y, dataset_name, model_name, hypers):
             start_time = time.time()
             clf.fit(X_train_val, y_train_val)
             stop_time = time.time()
-        except Exception as e:
+        except ValueError as e:
             if 'l2' in str(e):
                 return 'skip'
             else:
-                return f'error: {e}'  # raise e
+                #raise e
+                return f'error: {e}'
+
         if 'cv_fit_time' not in res:
             res['cv_fit_time'] = .0
             res['cv_predict_time'] = .0
@@ -170,6 +223,7 @@ def run(X, y, dataset_name, model_name, hypers):
         res['cv_predict_time'] += stop_time - start_time
 
         for k, v in evaluate_clf(y_val, y_pred, y_pred_proba).items():
+            k = f'val_{k}'
             if k not in k_fold_metrics:
                 res[k] = .0
             res[k] += v/cv_folds
@@ -189,15 +243,24 @@ def run(X, y, dataset_name, model_name, hypers):
         y_pred_proba = None
     res |= evaluate_clf(y_test, y_pred, y_pred_proba)
 
-    pickle.dump(res, open(filename+'.pkl', 'wb'))
+    pickle.dump(clf, open(filename+'.pkl', 'wb'))
     pd.DataFrame([res]).to_csv(filename+'.csv')
+
+    with h5py.File(filename + '.h5', 'w') as f:
+        f.create_dataset('X_train', data=X_train)
+        f.create_dataset('y_train', data=y_train)
+        f.create_dataset('X_test', data=X_test)
+        f.create_dataset('y_test', data=y_test)
+        if model_name == 'RuleCard':
+            with open(filename + '.rules', 'wb') as f:
+                pickle.dump(get_all_rules(clf, X_train), f)
 
     return 'ok'
 
 
 
 if __name__ == "__main__":
-    n = 2
+    n = 100
 
     with ProcessPoolExecutor(max_workers=n) as executor:
         for dataset in tqdm(all_datasets, position=0, leave=False, desc='Datasets'):
@@ -213,6 +276,8 @@ if __name__ == "__main__":
             else:
                 processes = []
                 for model_name in tqdm(dict_hyper.keys(), position=1, leave=False, desc=f'Fitting models for {dataset_name}'):
+                    if model_name != 'fasterrisk':
+                        continue
                     for val_comb in tqdm(product(*dict_hyper[model_name].values()), position=2, leave=False):
                         diz = dict(zip(dict_hyper[model_name].keys(), val_comb))
                         processes.append(executor.submit(run, X, y, dataset_name, model_name, diz))

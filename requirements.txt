@@ -1,9 +1,11 @@
 RuleTree
 interpret
-numpy==2.3.5
+numpy==2.2.2
 catboost
 xgboost
 lightgbm
 line_profiler_pycharm
 ucimlrepo
 pip-system-certs
+imodels
+pygam

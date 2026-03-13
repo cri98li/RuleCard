@@ -77,7 +77,8 @@ class RuleCardGAM(ClassifierMixin, BaseEstimator):
             return self.feature_combinations_ - self.used_features_
 
         self.feature_importance_, self.feature_combinations_ = self._orderby_feature_importance(X, y)
-        self.feature_combinations_ |= self._fast(X, y)
+        if self.use_fast:
+            self.feature_combinations_ |= self._fast(X, y)
 
         return self.feature_combinations_ - self.used_features_
 
@@ -150,6 +151,8 @@ class RuleCardGAM(ClassifierMixin, BaseEstimator):
                         best_res_delta = res_delta
                         best_res_delta_val = res_delta_val
 
+            if best_feat_idx == (-1,):
+                return self
             log_odds_prediction += best_res_delta
             log_odds_prediction_val += best_res_delta_val
             best_prediction = expit(log_odds_prediction)
@@ -161,7 +164,7 @@ class RuleCardGAM(ClassifierMixin, BaseEstimator):
             else:
                 wait += 1
                 if wait >= self.patience:
-                    self.estimators_ = self.estimators_[:-self.patience ]
+                    self.estimators_ = self.estimators_[:-wait]
                     return self
             prediction = best_prediction
             residuals = y_train - prediction
@@ -190,6 +193,9 @@ def _rulecardGAM_innerloop(base_estimator, feat_idx, learning_rate, X_train, X_v
     est = copy.deepcopy(base_estimator)
     est.fit(X_train.reshape(X_train.shape[0], -1), residuals)
 
+    if est.root.is_leaf():
+        pass
+
     leafs = est.apply(X_train.reshape(X_train.shape[0], -1))
     leafs_val = est.apply(X_val.reshape(X_val.shape[0], -1))
     gamma_map = {}
@@ -206,6 +212,8 @@ def _rulecardGAM_innerloop(base_estimator, feat_idx, learning_rate, X_train, X_v
     new_prediction_val = expit(log_odds_prediction_val + res_delta_val)
 
     score = np.mean(np.abs(y_train - new_prediction))
+    if not np.isinf(score):
+        pass
     score_val = np.mean(np.abs(y_val - new_prediction_val))
 
     return score, score_val, est, feat_idx, gamma_map, res_delta, res_delta_val

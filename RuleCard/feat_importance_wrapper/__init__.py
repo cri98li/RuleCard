@@ -15,11 +15,6 @@ class RuleCard_FeatureImportanceEstimator(ABC):
     def get_feature_importance(self) -> np.ndarray:
         pass
 
-class RuleCard_LogisticRegression(LogisticRegression, RuleCard_FeatureImportanceEstimator):
-    def get_feature_importance(self):
-        return self.coef_
-
-
 class RuleCard_DecisionTreeRegressor(DecisionTreeRegressor, RuleCard_FeatureImportanceEstimator):
     def get_feature_importance(self):
         return self.feature_importances_
