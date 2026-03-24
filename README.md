@@ -32,7 +32,22 @@ Dependencies are listed in `requirements.txt`.
 ## Running the code
 
 ```python
+from sklearn.metrics import classification_report
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 
+from Experiments.readers import read_telco
+from RuleCard.RuleCardGAM import RuleCardGAM
+
+df = read_telco()
+X = df.iloc[:, :-1].values
+y = LabelEncoder().fit_transform(df.iloc[:, -1].values)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+
+
+rcgam = RuleCardGAM()
+y_pred = rcgam.fit(X_train, y_train).predict(X_test)
+print('RuleCardGAM:', classification_report(y_test, y_pred), end='\t')
 ```
 
 Jupyter notebooks with examples on real datasets can be found in the `examples/` directory.
