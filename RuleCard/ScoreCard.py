@@ -87,7 +87,16 @@ class ScoreCard(ClassifierMixin, BaseEstimator):
     def _get_activation(self, X:np.ndarray, rules):
         activation = np.ones((X.shape[0],)).astype(np.bool)
         for feat_idx, thr, comp in rules:
-            activation &= X[:, feat_idx] <= thr if comp == '<=' else X[:, feat_idx] > thr
+            if comp == '<=':
+                activation &= X[:, feat_idx] <= thr
+            elif comp == '>':
+                activation &= X[:, feat_idx] > thr
+            elif comp == '==':
+                activation &= X[:, feat_idx] == thr
+            elif comp == '!=':
+                activation &= X[:, feat_idx] != thr
+            else:
+                raise ValueError(f'Unknown condition {activation}')
         return activation
 
     def predict_proba(self, X:np.ndarray):
