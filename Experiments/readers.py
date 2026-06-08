@@ -26,7 +26,9 @@ def read_titanic(encode=True):
 
     columns = set(df.columns.tolist()) - {target_col}
 
-    return 'titanic', df[list(columns) + [target_col]].rename(columns={target_col: 'y'}).astype("float")
+    if encode:
+        df = df.astype("float")
+    return 'titanic', df[list(columns) + [target_col]].rename(columns={target_col: 'y'})
 
 
 def read_bank(encode=True):
@@ -35,7 +37,9 @@ def read_bank(encode=True):
 
     columns = set(df.columns.tolist()) - {target_col}
 
-    return 'bank', df[list(columns) + [target_col]].rename(columns={target_col: 'y'}).astype("float")
+    if encode:
+        df = df.astype("float")
+    return 'bank', df[list(columns) + [target_col]].rename(columns={target_col: 'y'})
 
 
 def read_diabetes(encode=True):
@@ -44,7 +48,9 @@ def read_diabetes(encode=True):
 
     columns = set(df.columns.tolist()) - {target_col}
 
-    return ('diabetes', df[list(columns) + [target_col]].rename(columns={target_col: 'y'}).astype("float"))
+    if encode:
+        df = df.astype("float")
+    return 'diabetes', df[list(columns) + [target_col]].rename(columns={target_col: 'y'})
 
 
 def read_taiwan_credit(encode=True):
@@ -60,7 +66,9 @@ def read_taiwan_credit(encode=True):
 
     columns = set(df.columns.tolist()) - {target_col}
 
-    return 'taiwan_credit', df[list(columns) + [target_col]].rename(columns={target_col: 'y'}).astype("float")
+    if encode:
+        df = df.astype("float")
+    return 'taiwan_credit', df[list(columns) + [target_col]].rename(columns={target_col: 'y'})
 
 
 def read_compas(encode=True):
@@ -71,7 +79,7 @@ def read_compas(encode=True):
                      'c_charge_desc', 'r_charge_degree', 'r_days_from_arrest', 'r_offense_date', 'r_charge_desc',
                      'r_jail_in', 'r_jail_out', 'vr_charge_degree', 'type_of_assessment', 'decile_score.1',
                      'screening_date', 'v_type_of_assessment', 'v_decile_score', 'v_screening_date',
-                     'in_custody', 'out_custody', 'start', 'end', 'event'], inplace=True)
+                     'in_custody', 'out_custody', 'start', 'end', 'event', 'is_recid'], inplace=True)
 
     if encode:
         score_text = {
@@ -102,7 +110,9 @@ def read_compas(encode=True):
 
     columns = set(df.columns.tolist()) - {target_col}
 
-    return 'compass', df[list(columns) + [target_col]].rename(columns={target_col: 'y'}).astype("float")
+    if encode:
+        df = df.astype("float")
+    return 'compass', df[list(columns) + [target_col]].rename(columns={target_col: 'y'})
 
 
 def read_adult(encode=True):
@@ -146,7 +156,9 @@ def read_adult(encode=True):
 
     columns = set(df.columns.tolist()) - {target_col}
 
-    return 'adult', df[list(columns) + [target_col]].rename(columns={target_col: 'y'}).astype("float")
+    if encode:
+        df = df.astype("float")
+    return 'adult', df[list(columns) + [target_col]].rename(columns={target_col: 'y'})
 
 def read_fico(encode=True):
     target_col = 'RiskPerformance'
@@ -157,7 +169,10 @@ def read_fico(encode=True):
 
     columns = set(df.columns.tolist()) - {target_col}
 
-    return 'fico', df[list(columns) + [target_col]].rename(columns={target_col: 'y'}).astype("float")
+    if encode:
+        df = df.astype("float")
+
+    return 'fico', df[list(columns) + [target_col]].rename(columns={target_col: 'y'})
 
 
 def read_german_credit(encode=True):
@@ -240,7 +255,9 @@ def read_german_credit(encode=True):
 
     columns = set(df.columns.tolist()) - {target_col}
 
-    return 'german_credit', df[list(columns) + [target_col]].rename(columns={target_col: 'y'}).astype("float")
+    if encode:
+        df = df.astype("float")
+    return 'german_credit', df[list(columns) + [target_col]].rename(columns={target_col: 'y'})
 
 def read_wdbc(encode=True):
     target_col = 'diagnosis'
@@ -251,7 +268,9 @@ def read_wdbc(encode=True):
 
     columns = set(df.columns.tolist()) - {target_col}
 
-    return 'breast', df[list(columns) + [target_col]].rename(columns={target_col: 'y'}).astype("float")
+    if encode:
+        df = df.astype("float")
+    return 'breast', df[list(columns) + [target_col]].rename(columns={target_col: 'y'})
 
 
 def read_breast(encode=True):
@@ -264,8 +283,9 @@ def read_breast(encode=True):
         y = LabelEncoder().fit_transform(y.values.ravel())
 
     X['y'] = y
-
-    return 'breast', X.astype("float")
+    if encode:
+        X = X.astype("float")
+    return 'breast', X
 
 
 
@@ -274,8 +294,9 @@ def read_bankMarketing(encode=True):
     df = pd.read_csv("../datasets/CLF/bank-marketing.csv")
 
     columns = set(df.columns.tolist()) - {target_col}
-
-    return 'bankMarketing', df[list(columns) + [target_col]].rename(columns={target_col: 'y'}).astype("float")
+    if encode:
+        df = df.astype("float")
+    return 'bankMarketing', df[list(columns) + [target_col]].rename(columns={target_col: 'y'})
 
 
 def read_mushroom(encode=True):
@@ -299,8 +320,9 @@ def read_mushroom(encode=True):
 
 
     columns = set(df.columns.tolist()) - {target_col}
-
-    return 'mushroom', df[list(columns) + [target_col]].rename(columns={target_col: 'y'}).astype("float")
+    if encode:
+        df = df.astype("float")
+    return 'mushroom', df[list(columns) + [target_col]].rename(columns={target_col: 'y'})
 
 
 def read_telco(encode=True):
@@ -326,7 +348,10 @@ def read_telco(encode=True):
 
     columns = set(df.columns.tolist()) - {target_col}
 
-    return 'telco', df[list(columns) + [target_col]].rename(columns={target_col: 'y'}).astype("float")
+
+    if encode:
+        df = df.astype("float")
+    return 'telco', df[list(columns) + [target_col]].rename(columns={target_col: 'y'})
 
 def read_heart(encode=True):
     heart_disease = fetch_ucirepo(id=45)
@@ -335,7 +360,9 @@ def read_heart(encode=True):
 
     X['y'] = y
     X.dropna(inplace=True)
-    return 'heart', X.astype("float")
+    if encode:
+        X = X.astype("float")
+    return 'heart', X
 
 
 def read_magic(encode=True):
@@ -344,23 +371,25 @@ def read_magic(encode=True):
 
     columns = set(df.columns.tolist()) - {target_col}
 
-    return 'magic', df[list(columns) + [target_col]].rename(columns={target_col: 'y'}).astype("float")
+    if encode:
+        df = df.astype("float")
+    return 'magic', df[list(columns) + [target_col]].rename(columns={target_col: 'y'})
 
 
 all_datasets = [
-    read_telco,
+    read_telco, #fatto parziale 10
     #read_heart,
-    read_magic,
-    read_bankMarketing,
-    read_diabetes,
-    read_titanic,
-    read_compas,
-    read_breast,
-    read_german_credit,
-    read_taiwan_credit,
-    read_adult,
-    read_bank,
-    read_mushroom
+    read_magic, #fatto completo 10
+    read_bankMarketing, #fatto completo 10
+    read_diabetes, #fatto completo 10
+    read_titanic, #fatto completo 10
+    read_compas, #fatto completo 10
+    read_breast, #partial 10
+    read_german_credit, #fatto parziale 10
+    read_taiwan_credit, #fatto parziale 10
+    read_adult, # parziale 10
+    read_bank, # fatto 10
+    read_mushroom, #no
 ]
 
 if __name__ == "__main__":

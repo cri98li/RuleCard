@@ -68,7 +68,7 @@ class RuleCardGAM(ClassifierMixin, BaseEstimator):
         admissible_features = self._orderby_random(X, y)
         if len(admissible_features) < 2:
             return OrderedSet()
-        interactions = measure_interactions(X, y, interactions=combinations([x[0] for x in admissible_features], 2))
+        interactions = measure_interactions(X, y, interactions=combinations([x[0] for x in admissible_features], 2))#[:1]
 
         return OrderedSet([c for c, scores in interactions])
 
@@ -135,11 +135,11 @@ class RuleCardGAM(ClassifierMixin, BaseEstimator):
                         best_res_delta_val = res_delta_val
 
             else:
-                results = Parallel(n_jobs=self.n_jobs, prefer="processes", verbose=0 if not self.verbose else 5)(
+                results = Parallel(n_jobs=self.n_jobs, prefer="processes")(
                     delayed(_rulecardGAM_innerloop)(self.base_estimator, feat_idx, self.learning_rate,
                                                     X_train[:, feat_idx], X_val[:, feat_idx], y_train, y_val, residuals,
                                                     prediction, log_odds_prediction, log_odds_prediction_val)
-                    for feat_idx in self._get_combinations(X_train, residuals)
+                    for feat_idx in tqdm(self._get_combinations(X_train, residuals), position=1, leave=False, disable=not self.verbose)
                 )
 
                 for score, score_val, est, feat_idx, gamma_map, res_delta, res_delta_val in results:

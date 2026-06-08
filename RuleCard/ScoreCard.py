@@ -85,7 +85,7 @@ class ScoreCard(ClassifierMixin, BaseEstimator):
         return cls(rules, clf.learning_rate, clf.base_log_odds, clf.classes_, PDO, odds0, score0)
 
     def _get_activation(self, X:np.ndarray, rules):
-        activation = np.ones((X.shape[0],)).astype(np.bool)
+        activation = np.ones((X.shape[0],)).astype(bool)
         for feat_idx, thr, comp in rules:
             if comp == '<=':
                 activation &= X[:, feat_idx] <= thr

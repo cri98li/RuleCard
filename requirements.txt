@@ -9,3 +9,9 @@ ucimlrepo
 pip-system-certs
 imodels
 pygam
+h5py
+rulefit
+sortednp
+sortedcontainers
+bitarray
+pyfim
